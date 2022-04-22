@@ -109,6 +109,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.capestone
 
 # Spyder project settings
 .spyderproject
@@ -134,5 +135,11 @@ models/*.sav
 mlruns
 models/*
 
-#config file has sensitive data
+images
+*.jpg
+
+other
+*.DS_Store
+
+#configfile has sensitive data
 .mlflow_uri
