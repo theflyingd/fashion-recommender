@@ -163,7 +163,7 @@ rab as known as scikits.recommender is a Python framework for building recommend
 The engine aims to provide a rich set of components from which you can construct a customized recommender system from a set of algorithms and be usable in various contexts: ** science and engineering ** .
 
 [Rexy](https://github.com/mazdaka/Rexy)
-![](./images/Meeting_Alex_Rexy.jpg)
+![](./pictures/Meeting_Alex_Rexy.jpg)
 
 Rexy (rec-sy) is an open-source recommendation system based on a general User-Product-Tag concept and a flexible structure that has been designed to be adaptable with various data-schema. There are a lot of methods and ways that Rexy has used to recommend the products to users. This includes general recommendations like Top products, event based recommendations and Novel products that the user might be interested in. There are other recommendations that are directly related to the user's activities or other users that have a similar behavior to the given user.
 
