@@ -137,6 +137,7 @@ models/*
 
 images
 *.jpg
+!Meeting_Alex_Rexy.jpg
 
 other
 *.DS_Store
