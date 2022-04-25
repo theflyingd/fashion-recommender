@@ -134,6 +134,7 @@ data/*.csv
 models/*.sav
 mlruns
 models/*
+parquet/*.parquet
 
 images
 *.jpg
