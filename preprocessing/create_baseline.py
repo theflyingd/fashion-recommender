@@ -2,13 +2,13 @@ from logging import getLogger
 import pandas as pd
 import numpy as np
 import warnings
-import logging
+import logging, os
 from tqdm import tqdm
 
 warnings.filterwarnings("ignore")
 logger = getLogger(__name__)
 
-def prepare_data():
+def prepare_data(data_dir):
     """Loads data and prepares basic ingredients for making the baseline
        and random submissions. 
 
@@ -19,7 +19,7 @@ def prepare_data():
         Series: all customer ids that need prediction
     """
     # find all-time top 12 items
-    df_trans = pd.read_csv('data/transactions_train.csv', parse_dates=[0], 
+    df_trans = pd.read_csv(os.path.join(data_dir, 'transactions_train.csv'), parse_dates=[0], 
                            dtype={'article_id':'string'})
     df_trans['total_sold'] = df_trans.article_id.apply(lambda id: 1)
     top12_items = df_trans.groupby('article_id').total_sold.sum().sort_values(ascending=False).iloc[0:12]
@@ -29,7 +29,7 @@ def prepare_data():
     art_ids = df_trans.query('total_sold >= 1').article_id.copy()
 
     # collect customer_ids of all customers that have to be predicted
-    df_cus = pd.read_csv('data/customers.csv')
+    df_cus = pd.read_csv(os.path.join(data_dir,'customers.csv'))
     cus_ids = df_cus.customer_id.unique()
     return top12_items.index.to_list(), art_ids, cus_ids
 
@@ -44,20 +44,21 @@ def create_baseline():
     """
     logger.info('Creating baseline and random submission...')
     logger.info('Preparing data...')
-    top12_items, art_ids, cus_ids = prepare_data()
+    data_dir = 'data/'
+    top12_items, art_ids, cus_ids = prepare_data(data_dir)
     logger.info('Done.')
 
     logger.info('Creating submission files...')
     # baseline prediction for all customers
     prediction = ' '.join(top12_items)
     predictions = pd.DataFrame({'customer_id':cus_ids, 'prediction':np.repeat(prediction, len(cus_ids))})
-    predictions.to_csv('data/baseline_submission.csv', index=False)
+    predictions.to_csv(os.path.join(data_dir, 'baseline_submission.csv'), index=False)
 
     # purely random prediction for all customers
     rng = np.random.default_rng(seed=42)
     predictions = [' '.join(art_ids.iloc[rng.integers(low=0, high=len(art_ids), size=12)].values) for p in tqdm(range(len(cus_ids)))]
     predictions = pd.DataFrame({'customer_id':cus_ids, 'prediction':predictions})
-    predictions.to_csv('data/random_submission.csv', index=False)
+    predictions.to_csv(os.path.join(data_dir, 'random_submission.csv'), index=False)
     logger.info('Done.')
     return None
 
