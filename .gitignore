@@ -137,6 +137,7 @@ models/*
 parquet/*.parquet
 
 images
+*.png
 *.jpg
 !Meeting_Alex_Rexy.jpg
 
