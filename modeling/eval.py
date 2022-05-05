@@ -85,9 +85,9 @@ def average_precision_at_k(predicted, actual, cutoff=12):
         float: Average precision at cutoff k.
     """
     n_pred = len(predicted)
-    if n_pred > 12:
-        predicted = predicted[0:12]
-        n_pred = 12
+    if n_pred > cutoff:
+        predicted = predicted[0:cutoff]
+        n_pred = cutoff
     n_true = len(actual)
     avg_prec = 0.0
     how_many_of_k = 0
