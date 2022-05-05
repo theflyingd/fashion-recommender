@@ -40,8 +40,13 @@ def prepare_data(sub_file, start_date, end_date):
         raise DuplicateCustomerError('Some customers are appearing multiple times in your submission file. Stopping...')
 
     # get rid of empty and nan predictions
+    n_pred = len(sub)
     sub.replace('', np.NaN, inplace=True)
     sub.dropna(axis=0, inplace=True)
+    n_after = len(sub)
+    if n_pred > n_after:
+        logger.warning(f'You have empty predictions and or nan predictions in your submission. These will not be scored. Number of dropped rows: {n_pred-n_after}')
+    # load transactions
     df_trans = pd.read_csv('data/transactions_train.csv', parse_dates=[0], 
                            dtype={'article_id':'string'})
 
