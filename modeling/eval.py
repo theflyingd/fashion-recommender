@@ -1,5 +1,6 @@
 from logging import getLogger
 import pandas as pd
+import numpy as np
 import warnings
 import mlflow
 import sys, os
@@ -8,6 +9,11 @@ from config import TRACKING_URI, EXPERIMENT_NAME
 
 warnings.filterwarnings("ignore")
 logger = getLogger(__name__)
+
+class DuplicateCustomerError(Exception):
+    """ Exception will be raised when customers are appearing
+    several times in the submission file."""
+    pass
 
 def prepare_data(sub_file, start_date, end_date):
     """Loads a given submission file and adds a ground_truth column, containing
@@ -26,15 +32,28 @@ def prepare_data(sub_file, start_date, end_date):
 
     logger.info("Preparing the data...")
 
-    # load submission and transactions data
+    # load submission, customer and transactions data
     sub = pd.read_csv(sub_file, index_col=0)
+    
+    # check for duplicate predictions
+    if len(sub.index) > len(sub.index.unique()):
+        raise DuplicateCustomerError('Some customers are appearing multiple times in your submission file. Stopping...')
+
     df_trans = pd.read_csv('data/transactions_train.csv', parse_dates=[0], 
                            dtype={'article_id':'string'})
 
     # initially, drop all customers that made no purchase during the test period
     test_data = df_trans.query('t_dat >= @start_date and t_dat <= @end_date').copy()
-    customers = test_data.customer_id.unique()
-    sub = sub.loc[customers]
+    scored_customers = test_data.customer_id.unique()
+
+    # reduce to include only customers that were actually predicted
+    predicted_customers = sub.index.unique()
+    predicted_and_scored = np.intersect1d(np.array(predicted_customers), np.array(scored_customers))
+    # utter warning if not all scored customers were predicted
+    if len(predicted_and_scored) < len(scored_customers):
+        percentage_predicted = len(predicted_and_scored)/len(scored_customers) * 100.0
+        logger.warning(f'You have not predicted all customers that bought something during the validation period. You have scored only {percentage_predicted} of all relevant customers.')
+    sub = sub.loc[predicted_and_scored]
 
     # now collect item ids that were actually bought during test
     test_data.loc[:, 'article_id'] = test_data.article_id.apply(lambda i: str(i))
