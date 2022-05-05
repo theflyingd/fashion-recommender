@@ -32,13 +32,16 @@ def prepare_data(sub_file, start_date, end_date):
 
     logger.info("Preparing the data...")
 
-    # load submission, customer and transactions data
+    # load submission
     sub = pd.read_csv(sub_file, index_col=0)
     
     # check for duplicate predictions
     if len(sub.index) > len(sub.index.unique()):
         raise DuplicateCustomerError('Some customers are appearing multiple times in your submission file. Stopping...')
 
+    # get rid of empty and nan predictions
+    sub.replace('', np.NaN, inplace=True)
+    sub.dropna(axis=0, inplace=True)
     df_trans = pd.read_csv('data/transactions_train.csv', parse_dates=[0], 
                            dtype={'article_id':'string'})
 
