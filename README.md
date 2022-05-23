@@ -97,6 +97,9 @@ To deal with the big data a cloud service (```Google Cloud Platform)``` was used
 
 ## Explorative Data Analysis
 
+![](./images/EDA.jpg)
+
+
 ## Models
 
 ![](./images/Models.jpg)
