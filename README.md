@@ -96,3 +96,7 @@ Further investiagtion to the basic data can be found in the notebook Columsdescr
 To deal with the big data a cloud service (```Google Cloud Platform)``` was used. The datasets were transformed to [```.parquet files```](https://parquet.apache.org/) ([pyarrow](https://arrow.apache.org/docs/python/index.html)) and loaded into ```Google cloud storage```. In addition ```Bigquery``` was enabled as a Data warehouse, to be adressed with SQL-Queries. For paralizsation of the data wrangling and EDA, the Python library [```dask```](https://dask.org/) was used. 
 
 ## Explorative Data Analysis
+
+## Models
+
+¡[](./images/Models.jpg)
