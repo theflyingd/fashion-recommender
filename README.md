@@ -28,6 +28,12 @@ The dataset contains 3 Tables :
     * 31,788,324 transactions and 5 features
         20.09.2018 - 22.09.2020
 
+## Final presentation
+
+The results of this capstone project were presented on the 19th of May 2022 during the graduation event of the neue fische data science bootcamp.
+
+The final slides can be accessed [here](./presentation/20220518_Getting-dressed-by-machines_Capstone-project-presentation.pdf).
+
 ### Transaction table :
 
 The main table was the transactions table, which connects the article table with the customer table. There every single purchased item is present. An overview is given in the following:
@@ -99,7 +105,52 @@ To deal with the big data a cloud service (```Google Cloud Platform)``` was used
 
 ![](./images/EDA.jpg)
 
+See lso the following notebooks for more EDA:
+
+* [Initial_EDA_CMM](./notebooks/Initial_EDA_CMM.ipynb)
+* [EDA-Martin](./notebooks/EDA-Martin.ipynb)
+* [first_eda_sinan](./notebooks/first_eda_sinan.ipynb)
 
 ## Models
 
+Four different algorithms plus a baseline model were applied. This chapter introduces the algorithms and gives an overview of the used notebooks.
+
 ![](./images/Models.jpg)
+
+### Content-basel filtering
+This approach tries to find similarities between articles solely based on their features. It recommend articles that are similar to that what a user likes (based on actions or explicit feedback).
+
+@ SINAN: Please list your notebooks and provide short descriptions (see market basket approach) 
+
+### Collaborative filtering
+This approach filters articles based on user-item interactions. It works both memory-based (neighborhood/similarity) and model-based (latent factors).
+
+@ LENNART: Please list your notebooks and provide short descriptions (see market basket approach) 
+
+### Transformers
+This approach is more or less a bridge between NLP and recommender systems and can be explained as a kind of "auto-complete for purchase decisions".
+
+@ MARTIN: Please list your notebooks and provide short descriptions (see market basket approach) 
+
+
+### Market basket approach
+This approach mines for association rules of articles which often appear together in marketbaskets. Instead of using market baskets we decided to apply the algorithm on "wardrobes". A wardrobe is defined by all articles an individual customer has purchased. In our case all articles which appear in the transactions_train dataset and can be assigned to an individual customer id.
+
+The following notebooks are used for this approach:
+
+* [Generate_wardrobe_df_CMM](./notebooks/Generate_wardrobe_df_CMM.ipynb): This notebooks helps to generate a dataframe and csv which stores all wardrobes which can be collected out of the transaction dataset.
+* [Marketbasket_Analysis_on_wardrobes_CMM](./notebooks/Marketbasket_Analysis_on_wardrobes_CMM.ipynb): This notebook mines assocation rules out of given wardrobes based on the [apyori](https://pypi.org/project/apyori/) library.
+* **WIP**: [Marketbasket_Analysis_on_baskets_CMM](./notebooks/Marketbasket_Analysis_on_baskets_CMM.ipynb): This notebook mines assocation rules based on market baskets. This approach is work-in-progress. The notebook does not include final and applicable code.
+* [Marketbasket_Analysis_Build_recommendations_CMM](./notebooks/Marketbasket_Analysis_Build_recommendations_CMM.ipynb): This notebooks generates submission files (csv) with 12 recommendations for each customer_id. Empty fields are filled up with the Top12 sold aricles. The csv can either be used to upload it on kaggle or calculate results with [eval-code](./modeling/eval.py) or [Monetary_value](./notebooks/Monetary_value.ipynb).
+* [Monetary_value](./notebooks/Monetary_value.ipynb): This notebook takes a submission-csv and checks which recommendations were actually purchased on the 4 test weeks. Based on this the hitrate, the monetary value of the hits (based on article-prices) and the share of predicted turnover is calculated. Finally, the results are stored in a csv.
+
+### Additional model: Top12 most sold articles in age-clusters
+
+While our original baseline model takes the Top12 most sold articles of the entire customer base, this approach calculates the Top12 most sold articles of specific age-groups of the customers. See [Top12_clusters](./notebooks/Top12_clusters.ipynb) for the code.
+
+
+## Additional notebooks:
+
+...tbd
+
+
