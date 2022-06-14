@@ -8,6 +8,7 @@ import warnings
 import mlflow
 from mlflow.sklearn import save_model  # , log_model
 import numpy as np
+from scipy.sparse import coo_matrix
 
 from config import TRACKING_URI, EXPERIMENT_NAME
 
@@ -82,14 +83,15 @@ def get_utility_matrix(ints, n_users, n_items):
     ints['j'] = ints.customer_id.apply(lambda id: user_id_map[id])
 
     # create sparse matrix
-    Y = coo_matrix((df_int.interactions, (df_int['i'], df_int['j'])), shape=(n_items,n_users))
+    Y = coo_matrix((ints.interactions, (ints['i'], ints['j'])), shape=(n_items,n_users))
+    Y_csr = Y.T.tocsr()
 
     # compute sparsity ratio
-    n_total = Y.shape[0]*Y.shape[1]
-    n_int = Y.nnz
-    sparsity = n_int/n_total
+    n_total = Y_csr.shape[0]*Y_csr.shape[1]
+    n_int = Y_csr.nnz
+    sparsity = n_int/n_total*100.0
 
-    return Y.T.tocsr(), sparsity
+    return Y_csr, sparsity
     
 def run_training():
     logger.info('Loading and filtering data...')
@@ -102,7 +104,6 @@ def run_training():
     Y_full, sparse_full = get_utility_matrix(int_full, n_full, m_full)
     logger.info(f'Utility matrix of full model has dimensions ({n_full}, {m_full}) and a sparsity factor of {np.round(sparse_full, 2)}.')
     logger.info('Done...')
-
 
 
 
