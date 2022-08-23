@@ -9,6 +9,10 @@ import mlflow
 from mlflow.sklearn import save_model  # , log_model
 import numpy as np
 from scipy.sparse import coo_matrix
+import joblib
+import os
+from implicit.als import AlternatingLeastSquares
+from tqdm import tqdm
 
 from config import TRACKING_URI, EXPERIMENT_NAME
 
@@ -40,8 +44,8 @@ def load_and_filter_data(query_str):
     articles = pd.read_csv('data/articles.csv', dtype={'article_id':'string'})
     customers = pd.read_csv('data/customers.csv')
 
-    # exclude validation week from training data
-    transactions = transactions.query('t_dat < "2020-09-02"')
+    # exclude validation weeks from training data
+    transactions = transactions.query('t_dat < "2020-08-26"')
     # filter data to include only purchases in (for previous years) and right before the validation week to reflect seasonal buying    
     trans_seas = transactions.query(query_str).copy()
     # count customers and articles that are predictable with seasonal and full model respectively
@@ -92,19 +96,51 @@ def get_utility_matrix(ints, n_users, n_items):
     sparsity = n_int/n_total*100.0
 
     return Y_csr, sparsity
-    
-def run_training():
+
+def get_als_model(Y, n_factors=1280, reg=0.01, it=30):
+    model = AlternatingLeastSquares(factors=n_factors, regularization=reg, num_threads=0, iterations=it, use_gpu=False)
+    model.fit(2 * Y)    
+    return model
+
+def run_training(n_factors=1280, reg=0.01, it=30):
     logger.info('Loading and filtering data...')
     # get interaction data for seasonal and full models
-    query_str = '(t_dat >= "2018-08-22" and t_dat < "2018-09-23") or (t_dat >= "2019-08-22" and t_dat < "2019-09-23") or (t_dat >= "2020-08-01" and t_dat < "2020-09-02")'
-    int_seas, n_seas, m_seas, int_full, n_full, m_full = load_and_filter_data(query_str)
-    # create utility matrices
-    Y_seas, sparse_seas = get_utility_matrix(int_seas, n_seas, m_seas)    
-    logger.info(f'Utility matrix of seasonal model has dimensions ({n_seas}, {m_seas}) and a sparsity factor of {np.round(sparse_seas, 2)}.')
-    Y_full, sparse_full = get_utility_matrix(int_full, n_full, m_full)
-    logger.info(f'Utility matrix of full model has dimensions ({n_full}, {m_full}) and a sparsity factor of {np.round(sparse_full, 2)}.')
-    logger.info('Done...')
+    test_weeks = [{'start_date':'{}-08-26', 'end_date':'{}-09-01'}, {'start_date':'{}-09-02', 'end_date':'{}-09-08'},
+    {'start_date':'{}-09-09', 'end_date':'{}-09-15'}, {'start_date':'{}-09-16', 'end_date':'{}-09-22'}]
+    query_strings = ['', '', '', '']
+    for i, week in enumerate(test_weeks):
+        # window centered around and including the test week for the past years
+        for year in [2018, 2019]:
+            start_date = pd.to_datetime(week['start_date'].format(year), yearfirst=True)
+            end_date = pd.to_datetime(week['end_date'].format(year), yearfirst=True)
+            sd = start_date - pd.Timedelta(12, 'D')
+            ed = end_date + pd.Timedelta(12, 'D')
+            query_strings[i] += f'(t_dat >= "{sd}" and t_dat <= "{ed}") or '
+            # for the current year the test week needs to be excluded and no future data from after the test week can be used
+        start_date = pd.to_datetime(week['start_date'].format(2020), yearfirst=True)
+        end_date = pd.to_datetime(week['end_date'].format(2020), yearfirst=True)
+        sd = start_date - pd.Timedelta(30, 'D')                
+        query_strings[i] += f'(t_dat >= "{sd}" and t_dat < "{start_date}")'
 
+    # prepare, train and save models        
+    logger.info(f'Instantiating and training models using {n_factors} factors with regularization strength {reg} and up {it} iterations...')
+    filename = f'ALS_f{n_factors}_r{reg}_it{it}_'
+    for i, qs in enumerate(query_strings):
+        logger.info(f'Working on seasonal model for test week {i+1}...')
+        int_seas, n_seas, m_seas, int_full, n_full, m_full = load_and_filter_data(qs)
+        # create utility matrices
+        Ys, sparse_seas = get_utility_matrix(int_seas, n_seas, m_seas)    
+        logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({n_seas}, {m_seas}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
+        #rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)
+        #joblib.dump(rs, os.path.join('models/', filename + f'tw{i+1}_seas.sav'))
+      
+    Ys, sparse_full = get_utility_matrix(int_full, n_full, m_full)    
+    logger.info(f'Utility matrix of full model has dimensions ({n_full}, {m_full}) and a sparsity factor of {np.round(sparse_full, 2)}.')
+    rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)    
+    joblib.dump(rs, os.path.join('models/', filename + 'full.sav'))
+    logger.info('Done...')
+    
+    return None
 
 
 if __name__ == "__main__":
