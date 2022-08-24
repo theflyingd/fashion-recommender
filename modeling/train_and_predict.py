@@ -40,9 +40,9 @@ def load_and_filter_data(query_str):
         tuple(6) : Returns interaction frame, number of users and items for both the seasonal and the full model.
     """
     # import transactions, customer and article data
-    transactions = pd.read_csv('data/transactions_train.csv', parse_dates=[0], dtype={'article_id':'string'}).sample(n=1000, random_state=42)
+    transactions = pd.read_csv('data/transactions_train.csv', parse_dates=[0], dtype={'article_id':'string'})
     articles = pd.read_csv('data/articles.csv', dtype={'article_id':'string'})
-    customers = pd.read_csv('data/customers.csv').set_index('customer_id').loc[transactions.set_index('customer_id').index].reset_index()
+    customers = pd.read_csv('data/customers.csv')
 
     # filter data to include only purchases close to validation period ("seasonal" model)    
     transactions = transactions.query(query_str).copy()
