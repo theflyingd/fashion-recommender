@@ -44,10 +44,11 @@ def load_and_filter_data(query_str):
     articles = pd.read_csv('data/articles.csv', dtype={'article_id':'string'})
     customers = pd.read_csv('data/customers.csv')
 
-    # exclude validation weeks from training data
-    transactions = transactions.query('t_dat < "2020-08-26"')
-    # filter data to include only purchases in (for previous years) and right before the validation week to reflect seasonal buying    
+    # filter data to include only purchases close to validation period ("seasonal" model)    
     trans_seas = transactions.query(query_str).copy()
+    ## exclude only the validation weeks from training data for the full model
+    #transactions = transactions.query('t_dat < "2020-08-26"')
+
     # count customers and articles that are predictable with seasonal and full model respectively
     # the full model is trained on the full transaction table (excluding the validation week)
     n_seas = trans_seas.customer_id.nunique()
@@ -67,7 +68,7 @@ def load_and_filter_data(query_str):
     int_seas = group_interactions(trans_seas)
     int_full = group_interactions(transactions)
     
-    return int_seas, n_seas, m_seas, int_full, n_full, m_full
+    return int_seas, n_seas, m_seas, int_full, n_full, m_full, transactions, customers
 
 def get_utility_matrix(ints, n_users, n_items):
     # create utility matrix Y
@@ -95,7 +96,7 @@ def get_utility_matrix(ints, n_users, n_items):
     n_int = Y_csr.nnz
     sparsity = n_int/n_total*100.0
 
-    return Y_csr, sparsity
+    return Y_csr, sparsity, user_ids, user_id_map, item_id_map_rev
 
 def get_als_model(Y, n_factors=1280, reg=0.01, it=30):
     model = AlternatingLeastSquares(factors=n_factors, regularization=reg, num_threads=0, iterations=it, use_gpu=False)
@@ -104,10 +105,11 @@ def get_als_model(Y, n_factors=1280, reg=0.01, it=30):
 
 def run_training(n_factors=1280, reg=0.01, it=30):
     logger.info('Loading and filtering data...')
-    # get interaction data for seasonal and full models
+    # define training periods based on the given test weeks and make query strings from them
     test_weeks = [{'start_date':'{}-08-26', 'end_date':'{}-09-01'}, {'start_date':'{}-09-02', 'end_date':'{}-09-08'},
     {'start_date':'{}-09-09', 'end_date':'{}-09-15'}, {'start_date':'{}-09-16', 'end_date':'{}-09-22'}]
     query_strings = ['', '', '', '']
+    query_strings_full = ['', '', '', '']
     for i, week in enumerate(test_weeks):
         # window centered around and including the test week for the past years
         for year in [2018, 2019]:
@@ -121,23 +123,50 @@ def run_training(n_factors=1280, reg=0.01, it=30):
         end_date = pd.to_datetime(week['end_date'].format(2020), yearfirst=True)
         sd = start_date - pd.Timedelta(30, 'D')                
         query_strings[i] += f'(t_dat >= "{sd}" and t_dat < "{start_date}")'
+        query_strings_full[i] = f't_dat < "{start_date}"'
 
     # prepare, train and save models        
     logger.info(f'Instantiating and training models using {n_factors} factors with regularization strength {reg} and up {it} iterations...')
-    filename = f'ALS_f{n_factors}_r{reg}_it{it}_'
+
+    # repeat for the 4 test week specific sub-models
     for i, qs in enumerate(query_strings):
         logger.info(f'Working on seasonal model for test week {i+1}...')
-        int_seas, n_seas, m_seas, int_full, n_full, m_full = load_and_filter_data(qs)
+        int_seas, n_seas, m_seas, int_full, n_full, m_full, _, _ = load_and_filter_data(qs)
         # create utility matrices
-        Ys, sparse_seas = get_utility_matrix(int_seas, n_seas, m_seas)    
+        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, n_seas, m_seas)    
         logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({n_seas}, {m_seas}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
-        #rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)
-        #joblib.dump(rs, os.path.join('models/', filename + f'tw{i+1}_seas.sav'))
-      
-    Ys, sparse_full = get_utility_matrix(int_full, n_full, m_full)    
-    logger.info(f'Utility matrix of full model has dimensions ({n_full}, {m_full}) and a sparsity factor of {np.round(sparse_full, 2)}.')
-    rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)    
-    joblib.dump(rs, os.path.join('models/', filename + 'full.sav'))
+        rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)        
+        # predict full batch of users
+        user_idx = [user_id_map[id] for id in user_ids]
+        ids, scores = rs.recommend(user_idx, Ys[user_idx], N=12, filter_already_liked_items=False)
+        # get interaction data for full model (everything before test week) and train model
+        int_full, n_full, m_full, _, _, _, df_trans, customers = load_and_filter_data(query_strings_full[i])
+        df_trans = df_trans.query(query_strings_full[i])
+        Ys_full, sparse_full, user_ids_full, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, n_full, m_full)    
+        logger.info(f'Utility matrix of full model has dimensions ({n_full}, {m_full}) and a sparsity factor of {np.round(sparse_full, 2)}.')
+        rs_full = get_als_model(Ys_full, n_factors=n_factors, reg=reg, it=it)    
+        # find all customers that have not been predicted by the seasonal model due to lack of data, but can be predicted with full model
+        user_ids_diff = df_trans.set_index('customer_id').drop(user_ids, axis=0).reset_index().customer_id.unique()
+        user_idx_diff = [user_id_map_full[id] for id in user_ids_diff]
+        ids_diff, scores_diff = rs_full.recommend(user_idx_diff, Ys_full[user_idx_diff], N=12, filter_already_liked_items=False)
+        # convert from matrix indices to item ids
+        tmp = pd.DataFrame(ids, index=user_ids)
+        tmp = tmp.apply(lambda s: ' '.join(s.apply(lambda id: item_id_map_rev[id])), axis=1)
+        tmp2 = pd.DataFrame(ids_diff, index=user_ids_diff)
+        tmp2 = tmp2.apply(lambda s: ' '.join(s.apply(lambda id: item_id_map_rev_full[id])), axis=1)
+        predictions = pd.concat([tmp, tmp2], axis=0)
+        # make frame containing all available individualized recommendations and join with customer table
+        ids_all = np.hstack([user_ids, user_ids_diff])
+        print(len(ids_all), len(np.unique(ids_all)))
+        submission = pd.DataFrame({'prediction':predictions}, index=ids_all)
+        print(submission.index.nunique())
+        submission = customers.join(submission, on='customer_id', how='left').set_index('customer_id')
+        # now fill empty predictions with baseline
+        baseline_prediction = '0706016001 0706016002 0372860001 0610776002 0759871002 0464297007 0372860002 0610776001 0399223001 0706016003 0720125001 0156231001'
+        submission.fillna(baseline_prediction, inplace=True)
+        filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r={reg}_maxit={it}.csv'
+        submission.loc[:, 'prediction'].to_csv(os.path.join('data/', filename))
+        
     logger.info('Done...')
     
     return None
