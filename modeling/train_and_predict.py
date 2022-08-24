@@ -40,35 +40,26 @@ def load_and_filter_data(query_str):
         tuple(6) : Returns interaction frame, number of users and items for both the seasonal and the full model.
     """
     # import transactions, customer and article data
-    transactions = pd.read_csv('data/transactions_train.csv', parse_dates=[0], dtype={'article_id':'string'})
+    transactions = pd.read_csv('data/transactions_train.csv', parse_dates=[0], dtype={'article_id':'string'}).sample(n=1000, random_state=42)
     articles = pd.read_csv('data/articles.csv', dtype={'article_id':'string'})
-    customers = pd.read_csv('data/customers.csv')
+    customers = pd.read_csv('data/customers.csv').set_index('customer_id').loc[transactions.set_index('customer_id').index].reset_index()
 
     # filter data to include only purchases close to validation period ("seasonal" model)    
-    trans_seas = transactions.query(query_str).copy()
-    ## exclude only the validation weeks from training data for the full model
-    #transactions = transactions.query('t_dat < "2020-08-26"')
-
-    # count customers and articles that are predictable with seasonal and full model respectively
-    # the full model is trained on the full transaction table (excluding the validation week)
-    n_seas = trans_seas.customer_id.nunique()
-    m_seas = trans_seas.article_id.nunique()
-    n_full = transactions.customer_id.nunique()
-    m_full = transactions.article_id.nunique()
-    n_all = customers.customer_id.nunique()
-    m_all = articles.article_id.nunique()
-    n_cold = n_all - n_full
-
-    logger.info(f'Number of customers that will be predicted based on the seasonal model: {n_seas} ({np.round(n_seas/n_all*100.0, decimals=2)} %).')
-    logger.info(f'Number of predictable articles for these customers: {m_seas} ({np.round(m_seas/m_all*100.0, decimals=2)} %).')
-    logger.info(f'Number of customers that will be predicted based on the full model: {n_full} ({np.round(n_full/n_all*100.0, decimals=2)} %).')
-    logger.info(f'Number of predictable articles for these customers: {m_full} ({np.round(m_full/m_all*100.0, decimals=2)} %).')
-    logger.info(f'Number of cold customers: {n_cold} ({np.round(n_cold/n_all*100.0, decimals=2)} %).')
-    # group interactions (purchases) per customer and article
-    int_seas = group_interactions(trans_seas)
-    int_full = group_interactions(transactions)
+    transactions = transactions.query(query_str).copy()
     
-    return int_seas, n_seas, m_seas, int_full, n_full, m_full, transactions, customers
+    # count customers and articles that are predictable based on this subset of data    
+    dim = {'n':transactions.customer_id.nunique(),
+           'm':transactions.article_id.nunique(),
+           'n_all':customers.customer_id.nunique(),
+           'm_all':articles.article_id.nunique()}
+
+    logger.info(f'Number of customers that can be predicted based on this model: {dim["n"]} ({np.round(dim["n"]/dim["n_all"]*100.0, decimals=2)} %).')
+    logger.info(f'Number of predictable articles for these customers: {dim["m"]} ({np.round(dim["m"]/dim["m_all"]*100.0, decimals=2)} %).')
+    
+    # group interactions (purchases) per customer and article
+    int = group_interactions(transactions)
+    
+    return int, dim, transactions, customers
 
 def get_utility_matrix(ints, n_users, n_items):
     # create utility matrix Y
@@ -107,9 +98,9 @@ def run_training(n_factors=1280, reg=0.01, it=30):
     logger.info('Loading and filtering data...')
     # define training periods based on the given test weeks and make query strings from them
     test_weeks = [{'start_date':'{}-08-26', 'end_date':'{}-09-01'}, {'start_date':'{}-09-02', 'end_date':'{}-09-08'},
-    {'start_date':'{}-09-09', 'end_date':'{}-09-15'}, {'start_date':'{}-09-16', 'end_date':'{}-09-22'}]
-    query_strings = ['', '', '', '']
-    query_strings_full = ['', '', '', '']
+    {'start_date':'{}-09-09', 'end_date':'{}-09-15'}, {'start_date':'{}-09-16', 'end_date':'{}-09-22'}, {'start_date':'{}-09-23', 'end_date':'{}-09-29'}] 
+    query_strings = ['', '', '', '', '']
+    query_strings_full = ['', '', '', '', '']
     for i, week in enumerate(test_weeks):
         # window centered around and including the test week for the past years
         for year in [2018, 2019]:
@@ -131,22 +122,21 @@ def run_training(n_factors=1280, reg=0.01, it=30):
     # repeat for the 4 test week specific sub-models
     for i, qs in enumerate(query_strings):
         logger.info(f'Working on seasonal model for test week {i+1}...')
-        int_seas, n_seas, m_seas, int_full, n_full, m_full, _, _ = load_and_filter_data(qs)
+        int_seas, dim_seas, _, _ = load_and_filter_data(qs)
         # create utility matrices
-        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, n_seas, m_seas)    
-        logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({n_seas}, {m_seas}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
+        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, dim_seas['n'], dim_seas['m'])    
+        logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({dim_seas["n"]}, {dim_seas["m"]}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
         rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)        
         # predict full batch of users
         user_idx = [user_id_map[id] for id in user_ids]
         ids, scores = rs.recommend(user_idx, Ys[user_idx], N=12, filter_already_liked_items=False)
         # get interaction data for full model (everything before test week) and train model
-        int_full, n_full, m_full, _, _, _, df_trans, customers = load_and_filter_data(query_strings_full[i])
-        df_trans = df_trans.query(query_strings_full[i])
-        Ys_full, sparse_full, user_ids_full, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, n_full, m_full)    
-        logger.info(f'Utility matrix of full model has dimensions ({n_full}, {m_full}) and a sparsity factor of {np.round(sparse_full, 2)}.')
+        int_full, dim_full, transactions, customers = load_and_filter_data(query_strings_full[i])        
+        Ys_full, sparse_full, user_ids_full, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, dim_full['n'], dim_full['m'])    
+        logger.info(f'Utility matrix of full model has dimensions ({dim_full["n"]}, {dim_full["m"]}) and a sparsity factor of {np.round(sparse_full, 2)}.')
         rs_full = get_als_model(Ys_full, n_factors=n_factors, reg=reg, it=it)    
         # find all customers that have not been predicted by the seasonal model due to lack of data, but can be predicted with full model
-        user_ids_diff = df_trans.set_index('customer_id').drop(user_ids, axis=0).reset_index().customer_id.unique()
+        user_ids_diff = transactions.set_index('customer_id').drop(user_ids, axis=0).reset_index().customer_id.unique()
         user_idx_diff = [user_id_map_full[id] for id in user_ids_diff]
         ids_diff, scores_diff = rs_full.recommend(user_idx_diff, Ys_full[user_idx_diff], N=12, filter_already_liked_items=False)
         # convert from matrix indices to item ids
@@ -156,15 +146,13 @@ def run_training(n_factors=1280, reg=0.01, it=30):
         tmp2 = tmp2.apply(lambda s: ' '.join(s.apply(lambda id: item_id_map_rev_full[id])), axis=1)
         predictions = pd.concat([tmp, tmp2], axis=0)
         # make frame containing all available individualized recommendations and join with customer table
-        ids_all = np.hstack([user_ids, user_ids_diff])
-        print(len(ids_all), len(np.unique(ids_all)))
+        ids_all = np.hstack([user_ids, user_ids_diff])        
         submission = pd.DataFrame({'prediction':predictions}, index=ids_all)
-        print(submission.index.nunique())
         submission = customers.join(submission, on='customer_id', how='left').set_index('customer_id')
         # now fill empty predictions with baseline
         baseline_prediction = '0706016001 0706016002 0372860001 0610776002 0759871002 0464297007 0372860002 0610776001 0399223001 0706016003 0720125001 0156231001'
         submission.fillna(baseline_prediction, inplace=True)
-        filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r={reg}_maxit={it}.csv'
+        filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r_{reg}_maxit_{it}.csv'
         submission.loc[:, 'prediction'].to_csv(os.path.join('data/', filename))
         
     logger.info('Done...')
