@@ -90,9 +90,16 @@ def get_utility_matrix(ints, n_users, n_items):
     return Y_csr, sparsity, user_ids, user_id_map, item_id_map_rev
 
 def get_als_model(Y, n_factors=1280, reg=0.01, it=30):
+    # instantiate and train model
     model = AlternatingLeastSquares(factors=n_factors, regularization=reg, num_threads=0, iterations=it, use_gpu=False)
     model.fit(2 * Y)    
     return model
+
+def idx_to_ids(item_ids, user_ids, map_reverse):
+    # convert matrix indices to item ids
+    tmp = pd.DataFrame(item_ids, index=user_ids)
+    return tmp.apply(lambda s: ' '.join(s.apply(lambda id: map_reverse[id])), axis=1)
+
 
 def run_training(n_factors=1280, reg=0.01, it=30):
     logger.info('Loading and filtering data...')
@@ -109,7 +116,7 @@ def run_training(n_factors=1280, reg=0.01, it=30):
             sd = start_date - pd.Timedelta(12, 'D')
             ed = end_date + pd.Timedelta(12, 'D')
             query_strings[i] += f'(t_dat >= "{sd}" and t_dat <= "{ed}") or '
-            # for the current year the test week needs to be excluded and no future data from after the test week can be used
+        # for the current year the test week needs to be excluded and no future data from after the test week can be used
         start_date = pd.to_datetime(week['start_date'].format(2020), yearfirst=True)
         end_date = pd.to_datetime(week['end_date'].format(2020), yearfirst=True)
         sd = start_date - pd.Timedelta(30, 'D')                
@@ -123,37 +130,40 @@ def run_training(n_factors=1280, reg=0.01, it=30):
     for i, qs in enumerate(query_strings):
         logger.info(f'Working on seasonal model for test week {i+1}...')
         int_seas, dim_seas, _, _ = load_and_filter_data(qs)
-        # create utility matrices
+
+        # create utility matrix
         Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, dim_seas['n'], dim_seas['m'])    
         logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({dim_seas["n"]}, {dim_seas["m"]}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
         rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)        
+
         # predict full batch of users
         logger.info(f'Predicting first batch of users for test week {i+1}...')
         user_idx = [user_id_map[id] for id in user_ids]
-        ids, scores = rs.recommend(user_idx, Ys[user_idx], N=12, filter_already_liked_items=False)
+        ids, _ = rs.recommend(user_idx, Ys[user_idx], N=12, filter_already_liked_items=False)
+
         # get interaction data for full model (everything before test week) and train model
         logger.info(f'Working on full model for test week {i+1}...')
         int_full, dim_full, transactions, customers = load_and_filter_data(query_strings_full[i])        
-        Ys_full, sparse_full, user_ids_full, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, dim_full['n'], dim_full['m'])    
+        Ys_full, sparse_full, _, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, dim_full['n'], dim_full['m'])    
         logger.info(f'Utility matrix of full model has dimensions ({dim_full["n"]}, {dim_full["m"]}) and a sparsity factor of {np.round(sparse_full, 2)}.')
         rs_full = get_als_model(Ys_full, n_factors=n_factors, reg=reg, it=it)    
+
         # find all customers that have not been predicted by the seasonal model due to lack of data, but can be predicted with full model
         logger.info(f'Predicting second batch of users for test week {i+1}...')
         user_ids_diff = transactions.set_index('customer_id').drop(user_ids, axis=0).reset_index().customer_id.unique()
         user_idx_diff = [user_id_map_full[id] for id in user_ids_diff]
-        ids_diff, scores_diff = rs_full.recommend(user_idx_diff, Ys_full[user_idx_diff], N=12, filter_already_liked_items=False)
-        # convert from matrix indices to item ids
+        ids_diff, _ = rs_full.recommend(user_idx_diff, Ys_full[user_idx_diff], N=12, filter_already_liked_items=False)
         logger.info(f'Saving prediction results for test week {i+1}...')
-        tmp = pd.DataFrame(ids, index=user_ids)
-        tmp = tmp.apply(lambda s: ' '.join(s.apply(lambda id: item_id_map_rev[id])), axis=1)
-        tmp2 = pd.DataFrame(ids_diff, index=user_ids_diff)
-        tmp2 = tmp2.apply(lambda s: ' '.join(s.apply(lambda id: item_id_map_rev_full[id])), axis=1)
-        predictions = pd.concat([tmp, tmp2], axis=0)
+
+        # convert from matrix indices to item ids
+        predictions = pd.concat([idx_to_ids(ids, user_ids, item_id_map_rev), idx_to_ids(ids_diff, user_ids_diff, item_id_map_rev_full)], axis=0)
+
         # make frame containing all available individualized recommendations and join with customer table
         ids_all = np.hstack([user_ids, user_ids_diff])        
         submission = pd.DataFrame({'prediction':predictions}, index=ids_all)
         submission = customers.join(submission, on='customer_id', how='left').set_index('customer_id')
-        # now fill empty predictions with baseline
+
+        # now fill empty predictions (cold starts) with baseline and write to file
         baseline_prediction = '0706016001 0706016002 0372860001 0610776002 0759871002 0464297007 0372860002 0610776001 0399223001 0706016003 0720125001 0156231001'
         submission.fillna(baseline_prediction, inplace=True)
         filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r_{reg}_maxit_{it}.csv'
