@@ -119,7 +119,7 @@ def run_training(n_factors=1280, reg=0.01, it=30):
     # prepare, train and save models        
     logger.info(f'Instantiating and training models using {n_factors} factors with regularization strength {reg} and up {it} iterations...')
 
-    # repeat for the 4 test week specific sub-models
+    # repeat for each test week
     for i, qs in enumerate(query_strings):
         logger.info(f'Working on seasonal model for test week {i+1}...')
         int_seas, dim_seas, _, _ = load_and_filter_data(qs)
@@ -128,18 +128,22 @@ def run_training(n_factors=1280, reg=0.01, it=30):
         logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({dim_seas["n"]}, {dim_seas["m"]}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
         rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it)        
         # predict full batch of users
+        logger.info(f'Predicting first batch of users for test week {i+1}...')
         user_idx = [user_id_map[id] for id in user_ids]
         ids, scores = rs.recommend(user_idx, Ys[user_idx], N=12, filter_already_liked_items=False)
         # get interaction data for full model (everything before test week) and train model
+        logger.info(f'Working on full model for test week {i+1}...')
         int_full, dim_full, transactions, customers = load_and_filter_data(query_strings_full[i])        
         Ys_full, sparse_full, user_ids_full, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, dim_full['n'], dim_full['m'])    
         logger.info(f'Utility matrix of full model has dimensions ({dim_full["n"]}, {dim_full["m"]}) and a sparsity factor of {np.round(sparse_full, 2)}.')
         rs_full = get_als_model(Ys_full, n_factors=n_factors, reg=reg, it=it)    
         # find all customers that have not been predicted by the seasonal model due to lack of data, but can be predicted with full model
+        logger.info(f'Predicting second batch of users for test week {i+1}...')
         user_ids_diff = transactions.set_index('customer_id').drop(user_ids, axis=0).reset_index().customer_id.unique()
         user_idx_diff = [user_id_map_full[id] for id in user_ids_diff]
         ids_diff, scores_diff = rs_full.recommend(user_idx_diff, Ys_full[user_idx_diff], N=12, filter_already_liked_items=False)
         # convert from matrix indices to item ids
+        logger.info(f'Saving prediction results for test week {i+1}...')
         tmp = pd.DataFrame(ids, index=user_ids)
         tmp = tmp.apply(lambda s: ' '.join(s.apply(lambda id: item_id_map_rev[id])), axis=1)
         tmp2 = pd.DataFrame(ids_diff, index=user_ids_diff)
@@ -154,7 +158,7 @@ def run_training(n_factors=1280, reg=0.01, it=30):
         submission.fillna(baseline_prediction, inplace=True)
         filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r_{reg}_maxit_{it}.csv'
         submission.loc[:, 'prediction'].to_csv(os.path.join('data/', filename))
-        
+        logger.info(f'Done with test week {i+1}...')
     logger.info('Done...')
     
     return None
