@@ -166,7 +166,7 @@ def run_training(n_factors=1280, reg=0.01, it=30):
         # now fill empty predictions (cold starts) with baseline and write to file
         baseline_prediction = '0706016001 0706016002 0372860001 0610776002 0759871002 0464297007 0372860002 0610776001 0399223001 0706016003 0720125001 0156231001'
         submission.fillna(baseline_prediction, inplace=True)
-        filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r_{reg}_maxit_{it}.csv'
+        filename = f'prediction_test_week_{i+1}_ALS_{n_factors}_factors_r_{reg}_maxit_{it}2.csv'
         submission.loc[:, 'prediction'].to_csv(os.path.join('data/', filename))
         logger.info(f'Done with test week {i+1}...')
     logger.info('Done...')
