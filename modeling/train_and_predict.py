@@ -5,6 +5,7 @@ import numpy as np
 from scipy.sparse import coo_matrix
 import os, sys
 from implicit.als import AlternatingLeastSquares
+from implicit.nearest_neighbours import bm25_weight
 from tqdm import tqdm
 import json
 
@@ -53,7 +54,7 @@ def load_and_filter_data(query_str, config):
     
     return int, dim, transactions, customers
 
-def get_utility_matrix(ints, n_users, n_items):
+def get_utility_matrix(ints, n_users, n_items, use_weights, K1, B):
     # create utility matrix Y
     # rows represent items, columns represent users
     # note: users with no transactions and items never sold are not included
@@ -72,6 +73,8 @@ def get_utility_matrix(ints, n_users, n_items):
 
     # create sparse matrix
     Y = coo_matrix((ints.interactions, (ints['i'], ints['j'])), shape=(n_items,n_users))
+    if use_weights:
+        Y = bm25_weight(Y, K1=K1, B=B)
     Y_csr = Y.T.tocsr()
 
     # compute sparsity ratio
@@ -132,7 +135,8 @@ def run_training(config_file):
         int_seas, dim_seas, _, _ = load_and_filter_data(qs, config)
 
         # create utility matrix
-        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, dim_seas['n'], dim_seas['m'])    
+        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, dim_seas['n'], dim_seas['m'], use_weights=config['use_wrights'],
+                                                                                      K1=config['K1'], B=config['B'])
         logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({dim_seas["n"]}, {dim_seas["m"]}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
         rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it, use_gpu=config['use_gpu'])        
 
@@ -144,7 +148,8 @@ def run_training(config_file):
         # get interaction data for full model (everything before test week) and train model
         logger.info(f'Working on full model for test week {i+1}...')
         int_full, dim_full, transactions, customers = load_and_filter_data(query_strings_full[i], config)        
-        Ys_full, sparse_full, _, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, dim_full['n'], dim_full['m'])    
+        Ys_full, sparse_full, _, user_id_map_full, item_id_map_rev_full = get_utility_matrix(int_full, dim_full['n'], dim_full['m'], use_weights=config['use_weights'],
+                                                                                             K1=config['K1'], B=config['B'])    
         logger.info(f'Utility matrix of full model has dimensions ({dim_full["n"]}, {dim_full["m"]}) and a sparsity factor of {np.round(sparse_full, 2)}.')
         rs_full = get_als_model(Ys_full, n_factors=n_factors, reg=reg, it=it, use_gpu=config['use_gpu'])    
 
