@@ -171,7 +171,7 @@ def run_training(config_file):
         # now fill empty predictions (cold starts) with baseline and write to file
         baseline_prediction = config['global_baseline']
         submission.fillna(baseline_prediction, inplace=True)
-        submission.loc[:, 'prediction'].to_csv(config["file_out"])
+        submission.loc[:, 'prediction'].to_csv(config["file_out"].format(i+1))
         logger.info(f'Done with test week {i+1}...')
     logger.info('Done...')
     
