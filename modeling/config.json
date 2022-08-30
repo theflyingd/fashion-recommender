@@ -1,5 +1,6 @@
 {
     "file_out":"modeling/results_ALS_1280_f_0.01_r_30_it_test_week_{}.csv",
+    "n_factors":1280,
     "reg":0.01,
     "it":30,
     "test_year":2020,
