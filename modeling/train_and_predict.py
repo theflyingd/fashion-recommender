@@ -135,7 +135,7 @@ def run_training(config_file):
         int_seas, dim_seas, _, _ = load_and_filter_data(qs, config)
 
         # create utility matrix
-        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, dim_seas['n'], dim_seas['m'], use_weights=config['use_wrights'],
+        Ys, sparse_seas, user_ids, user_id_map, item_id_map_rev  = get_utility_matrix(int_seas, dim_seas['n'], dim_seas['m'], use_weights=config['use_weights'],
                                                                                       K1=config['K1'], B=config['B'])
         logger.info(f'Utility matrix of seasonal model for test week {i+1} has dimensions ({dim_seas["n"]}, {dim_seas["m"]}) and a sparsity factor of {np.round(sparse_seas, 2)}.')    
         rs = get_als_model(Ys, n_factors=n_factors, reg=reg, it=it, use_gpu=config['use_gpu'])        
