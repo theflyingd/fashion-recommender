@@ -55,6 +55,20 @@ def load_and_filter_data(query_str, config):
     return int, dim, transactions, customers
 
 def get_utility_matrix(ints, n_users, n_items, use_weights, K1, B):
+    """Computes utility matrix (user-item-interaction-matrix) based on interactions and model dimensions. Allows weighting of interactions.
+
+    Args:
+        ints (DataFrame): Interaction data frame.
+        n_users (int): Number of users.
+        n_items (int): Number of items.
+        use_weights (bool): True if interactions are to be weighted using the bm25 method. False otherwise.
+        K1 (float): Parameter for bm25 weighting.
+        B (float): Parameter for bm25 weighting.
+
+    Returns:
+        tuple(5): Returns sparse utility matrix (row format), sparseness factor, user ids covered, as well as mappings for converting
+        back and forth between user/item ids and row/column indices.
+    """
     # create utility matrix Y
     # rows represent items, columns represent users
     # note: users with no transactions and items never sold are not included
@@ -85,18 +99,49 @@ def get_utility_matrix(ints, n_users, n_items, use_weights, K1, B):
     return Y_csr, sparsity, user_ids, user_id_map, item_id_map_rev
 
 def get_als_model(Y, n_factors=1280, reg=0.01, it=30, use_gpu=False):
+    """Instantiates and trains alternating least squares model based on given utility matrix.
+
+    Args:
+        Y (csr_matrx): Utility matrix the model should be trained on.
+        n_factors (int, optional): Number of latent factors to be used. Defaults to 1280.
+        reg (float, optional): Regularization strength. Defaults to 0.01.
+        it (int, optional): Maximum iterations for approximate solver. Defaults to 30.
+        use_gpu (bool, optional): Use gpu (requires a card with a lot of RAM). Defaults to False.
+
+    Returns:
+        AlternatingLeastSquares: Alternating least squares object. See implicit documentation for details.
+    """
     # instantiate and train model
     model = AlternatingLeastSquares(factors=n_factors, regularization=reg, num_threads=0, iterations=it, use_gpu=use_gpu)
     model.fit(2 * Y)    
     return model
 
 def idx_to_ids(item_ids, user_ids, map_reverse):
+    """Batch converts predictions between utility matrix indices and item ids.
+
+    Args:
+        item_ids (list): List of item ids (recommendations).
+        user_ids (list): Matching user ids.
+        map_reverse (dict): Reverse map to convert between indices and item ids.
+
+    Returns:
+        DataFrame: Predictions converted to the aggregated string format based on item ids required by kaggle.
+    """
     # convert matrix indices to item ids
     tmp = pd.DataFrame(item_ids, index=user_ids)
     return tmp.apply(lambda s: ' '.join(s.apply(lambda id: map_reverse[id])), axis=1)
 
 
-def run_training(config_file):
+def run_training_and_prediction(config_file):
+    """Orchestrates training and prediction from loading and preparing the data, over instantiating and training the models
+    to making the required predictions and saving them to csv files.
+
+    Args:
+        config_file (dict): Configuration dictionary read from a json file provided by the user.
+
+    Returns:
+        None: Returns None.
+    """
     logger.info('Loading and filtering data...')
     # define training periods based on the given test weeks and make query strings from them
     with open(config_file) as json_file:
@@ -198,4 +243,4 @@ if __name__ == "__main__":
         logger.warning('Config file does not seem to exist. Exiting...')
         raise(FileNotFoundError())
 
-    run_training(config_file)
+    run_training_and_prediction(config_file)
