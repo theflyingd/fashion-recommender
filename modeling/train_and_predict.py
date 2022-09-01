@@ -112,7 +112,7 @@ def get_als_model(Y, n_factors=1280, reg=0.01, it=30, use_gpu=False):
         AlternatingLeastSquares: Alternating least squares object. See implicit documentation for details.
     """
     # instantiate and train model
-    model = AlternatingLeastSquares(factors=n_factors, regularization=reg, num_threads=0, iterations=it, use_gpu=use_gpu)
+    model = AlternatingLeastSquares(factors=n_factors, regularization=reg, num_threads=0, iterations=it, use_gpu=use_gpu, random_state=42)
     model.fit(2 * Y)    
     return model
 
