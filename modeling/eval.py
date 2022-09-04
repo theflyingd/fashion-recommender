@@ -4,8 +4,8 @@ import numpy as np
 import warnings
 import mlflow
 import sys, os
-from datetime import datetime
 from config import TRACKING_URI, EXPERIMENT_NAME
+import json
 
 warnings.filterwarnings("ignore")
 logger = getLogger(__name__)
@@ -122,43 +122,60 @@ def mean_average_precision_at_k(sub, cutoff=12):
     # normalize with number of customers
     return mean_avg_prec / len(sub)
 
-def run_evaluation(sub_file, start_date, end_date, cutoff, run_name):
+def run_evaluation(config_file):
     """Load a given submission and evaluate it using the mean average
-       precision at cutoff k. Log metrics with mlflow.
+       precision at cutoff k. Log metrics with mlflow and saved scores to csv.
 
     Args:
-        sub_file (DataFrame): DataFrame containing predicted and actual item ids for test customers.
-        start_date (datetime): Start of validation period.
-        end_date (datetime): End of validation period.
-        cutoff (int): Chosen cutoff k.
-        run_name (string): Run name for mlflow.
+        config_file (str): Path to json config file.
 
     Returns:
-        float: mean average precision at chosen cutoff
+        None
     """
-    logger.info(f'Computing mean average precision for submission file {sub_file}.')
-    logger.info(f'Selected test period: {start_date} -- {end_date}')
-    logger.info(f'Selected cutoff k: {cutoff}')
 
     mlflow.set_tracking_uri(TRACKING_URI)
     mlflow.set_experiment(EXPERIMENT_NAME)
-    with mlflow.start_run(run_name=run_name): 
-        # load data
-        sub_data = prepare_data(sub_file, start_date=start_date, end_date=end_date)
-        # compute MAP@cutoff
-        logger.info('Computing mean average precision...')
-        map_at_k = mean_average_precision_at_k(sub_data, cutoff=cutoff)
-        logger.info(f'Done. Final Score: {map_at_k}')
+    with open(config_file) as json_file:
+        config = json.load(json_file)
+
+    # iterate through all test weeks where sufficient data for validation is available
+    map_at_k = []
+    sub_idx = []
+    for i, week in enumerate(config["test_weeks"]):
+        start_date = pd.to_datetime(week['start_date'], yearfirst=True)
+        end_date = pd.to_datetime(week['end_date'], yearfirst=True)
+        daterange = start_date.strftime('%Y-%m-%d') + '--' + end_date.strftime('%Y-%m-%d')        
+        sub_file = config['file_out'] + '_' + daterange + '.csv'
+        cutoff = config['cutoff']
+
+        if end_date <= pd.to_datetime('2020-09-22', yearfirst=True):
+            logger.info(f'Computing mean average precision for submission file {sub_file}.')
+            logger.info(f'Selected test period: {start_date} -- {end_date}')
+            logger.info(f'Selected cutoff k: {cutoff}')
+            
+            sub_idx.append(sub_file)
+            with mlflow.start_run(run_name=config['MLFlow_run_name'] + '_' + daterange): 
+                # load data
+                sub_data = prepare_data(sub_file, start_date=start_date, end_date=end_date)
+                # compute MAP@cutoff
+                logger.info('Computing mean average precision...')
+                mpk = mean_average_precision_at_k(sub_data, cutoff=cutoff)
+                map_at_k.append(mpk)
+                logger.info(f'Done. Final Score: {mpk}')
     
-        mlflow.log_metric(f'MAP_at_{cutoff}', map_at_k)
-        params = {
-            'start_date': start_date,
-            'end_date': end_date,
-            'k': cutoff,
-            'submission_name': 'test'}
+                mlflow.log_metric(f'MAP_at_{cutoff}', mpk)
+                params = {
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'k': cutoff
+                    }
     
-        mlflow.log_params(params)
-    return map_at_k
+                mlflow.log_params(params)
+    map_at_k = pd.DataFrame(data=map_at_k, index=sub_idx, columns=[f'MAP_at_{cutoff}'])
+    map_at_k.index.name = 'submission_file'
+    score_file = config['file_out'] + '_scores.csv'
+    map_at_k.to_csv(score_file)
+    return None
 
 
 if __name__ == "__main__":
@@ -169,31 +186,16 @@ if __name__ == "__main__":
     logging.getLogger("pyhive").setLevel(logging.CRITICAL)  # avoid excessive logs
     logger.setLevel(logging.INFO)
 
-    # check command line arguments
-    try:
-        sub_file = sys.argv[1]
-        if not os.path.exists(sub_file):
-            logger.error('Input file does not seem to exist. Exiting...')
-            raise(FileNotFoundError)
-    except Exception:
-        logger.warning('No input file provided. Using default.')
-        sub_file = 'data/baseline_submission.csv'
-    
-    run_name = os.path.basename(sub_file).split('_')[0]
+   # check command line arguments
+    if len(sys.argv) == 1:
+        logger.warning('No config file provided. Trying default...')
+        config_file = 'modeling/config.json'
+    else:
+        config_file = sys.argv[1]
 
-    try:
-        start_date = datetime.strptime(sys.argv[2], '%Y-%m-%d')
-        end_date = datetime.strptime(sys.argv[3], '%Y-%m-%d')
-    except Exception:
-        logger.warning('Either start_date and/or end_date are missing or malformed. Using default values instead.')
-        start_date=datetime.strptime('2020-09-16', '%Y-%m-%d') 
-        end_date=datetime.strptime('2020-09-22', '%Y-%m-%d') 
-    
-    try: 
-        cutoff = int(sys.argv[4])
-    except Exception:
-        logger.warning('Cutoff value is missing or malformed. Using default value of 12.')
-        cutoff=12
+    config_file = str(config_file)
+    if not os.path.exists(config_file):
+        logger.warning('Config file does not seem to exist. Exiting...')
+        raise(FileNotFoundError())
 
-    run_evaluation(sub_file=sub_file, start_date=start_date, end_date=end_date, 
-                   cutoff=cutoff, run_name=run_name)
+    run_evaluation(config_file)
