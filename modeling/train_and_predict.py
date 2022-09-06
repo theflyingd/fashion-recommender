@@ -152,16 +152,19 @@ def run_training_and_prediction(config_file):
     it = config['it']
 
     n_weeks = len(config['test_weeks'])
-    train_years = range(config['test_year']-2, config['test_year']+1)
+    test_year = config['test_year']
+    train_years = range(test_year-2, test_year+1)
     query_strings = [''] * n_weeks
     query_strings_full = [''] * n_weeks
+    sub_files = []
 
     for i, week in enumerate(config["test_weeks"]):
         # window centered around and including the test week for the past 2 years 
         for year in train_years:
-            start_date = pd.to_datetime(week['start_date'].format(year), yearfirst=True)
-            end_date = pd.to_datetime(week['end_date'].format(year), yearfirst=True)
-            if year < config['test_year']:
+            start_date = pd.to_datetime(week['start_date'].replace(str(test_year), str(year)), yearfirst=True)
+            end_date = pd.to_datetime(week['end_date'].replace(str(test_year), str(year)), yearfirst=True)
+            daterange = start_date.strftime('%Y-%m-%d') + '--' + end_date.strftime('%Y-%m-%d')                    
+            if year < test_year:
                 sd = start_date - pd.Timedelta(12, 'D')
                 ed = end_date + pd.Timedelta(12, 'D')
                 query_strings[i] += f'(t_dat >= "{sd}" and t_dat <= "{ed}") or '
@@ -170,6 +173,7 @@ def run_training_and_prediction(config_file):
                 sd = start_date - pd.Timedelta(30, 'D')                
                 query_strings[i] += f'(t_dat >= "{sd}" and t_dat < "{start_date}")'
                 query_strings_full[i] = f't_dat < "{start_date}"'
+                sub_files.append(config['file_out'] + '_' + daterange + '.csv')
 
     # prepare, train and predict
     logger.info(f'Instantiating and training models using {n_factors} factors with regularization strength {reg} and up {it} iterations...')
@@ -216,7 +220,7 @@ def run_training_and_prediction(config_file):
         # now fill empty predictions (cold starts) with baseline and write to file
         baseline_prediction = config['global_baseline']
         submission.fillna(baseline_prediction, inplace=True)
-        submission.loc[:, 'prediction'].to_csv(config["file_out"].format(i+1))
+        submission.loc[:, 'prediction'].to_csv(sub_files[i])
         logger.info(f'Done with test week {i+1}...')
     logger.info('Done...')
     
