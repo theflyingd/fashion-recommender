@@ -1,0 +1,22 @@
+{
+    "file_out":"data/results_ALS_1280_f_0.01_r_30_it",
+    "n_factors":1280,
+    "reg":0.01,
+    "it":30,
+    "test_year":2020,
+    "use_gpu":false,
+    "use_weights":false,
+    "K1":100,
+    "B":0.8,
+    "test_weeks":[{"start_date":"2020-08-26", "end_date":"2020-09-01"}, 
+                  {"start_date":"2020-09-02", "end_date":"2020-09-08"},
+                  {"start_date":"2020-09-09", "end_date":"2020-09-15"}, 
+                  {"start_date":"2020-09-16", "end_date":"2020-09-22"}, 
+                  {"start_date":"2020-09-23", "end_date":"2020-09-29"}],
+    "global_baseline":"0706016001 0706016002 0372860001 0610776002 0759871002 0464297007 0372860002 0610776001 0399223001 0706016003 0720125001 0156231001",
+    "cutoff":12,
+    "MLFlow_run_name":"ALS_1280_f_0.01_r_30_it",
+    "transactions":"data/transactions_train.csv",
+    "customers":"data/customers.csv",
+    "articles":"data/articles.csv"
+}

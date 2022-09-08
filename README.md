@@ -123,9 +123,29 @@ This approach tries to find similarities between articles solely based on their 
 @ SINAN: Please list your notebooks and provide short descriptions (see market basket approach) 
 
 ### Collaborative filtering
-This approach filters articles based on user-item interactions. It works both memory-based (neighborhood/similarity) and model-based (latent factors).
+This approach filters articles based on past user-item interactions, in our case this means purchases. The main cf model in this project is an alternating least squares model, i.e., a model that learns 'latent' user and item factors (1280 in standard configuration) respectively, based on the utility matrix derived from the transactions data frame. Similar to the content based approach each factor can be interpreted as an attribute of an item, and the corresponding user factor then is the preference of a user for that attribute. However, in this approach both factors are learned from data by alternating between optimization of the user and item factors, based on how well they can explain the recorded user-item interactions in the utility matrix.
 
-@ LENNART: Please list your notebooks and provide short descriptions (see market basket approach) 
+To run the ALS model just go to the root directory of the repo and enter:
+
+python modeling/train_and_predict.py path/to/config.json
+
+Note that the path to the configuration file is optional. If no file is provided the default config.json from the modeling/ directory will be used.
+
+The model will be trained for all test weeks defined in the config file. See modeling/config.json for available options. For the default configuration these are the last 5 weeks of the data. Resulting predictions will be saved in the data/ directory as csv-files. The format is in line with the one required by the associated Kaggle challenge and can be used to submit on Kaggle without further processing. Note: training and prediction can take several hours.
+
+To evaluate the MAP@k for the resulting predictions run:
+
+python modeling/eval.py path/to/config.json
+
+The path to the config file is optional and the default will be used if not provided. Use the same config file that was used in training and predicting. All test weeks will be scored according to the MAP@k (default for k is 12 as per Kaggle challenge). For reference here are the results for the standard configuration:
+
+| submission_file                                                | MAP_at_12
+|data/results_ALS_1280_f_0.01_r_30_it_2020-08-26--2020-09-01.csv | 0.01371742561481911  |
+|data/results_ALS_1280_f_0.01_r_30_it_2020-09-02--2020-09-08.csv | 0.01647618039373869  |
+|data/results_ALS_1280_f_0.01_r_30_it_2020-09-09--2020-09-15.csv | 0.016722822849194158 |
+|data/results_ALS_1280_f_0.01_r_30_it_2020-09-16--2020-09-22.csv | 0.01583545858718839  |
+
+Note that the 5th (Kaggle) test week can not be validated, because the data is not public. Submitting it to Kaggle yielded a MAP@12 of 0.01474, consistent with the above results.
 
 ### Transformers
 This approach is more or less a bridge between NLP and recommender systems and can be explained as a kind of "auto-complete for purchase decisions".
